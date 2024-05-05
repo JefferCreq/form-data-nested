@@ -1,65 +1,136 @@
 "use client";
-
-import React, { useState } from "react";
+import { useState } from "react";
 
 export default function ActivityForm() {
+  const [accessToken, setAccessToken] = useState("");
   const [formData, setFormData] = useState({
-    type: "",
-    item: {
-      text: "",
-      text_translation: "",
-      audio: null, // Se ajusta para manejar archivos
-    },
-    items: [],
-    description: "",
+    type: "PronunciationRecognitionActivity",
+    items: [
+      {
+        text: "",
+        text_translation: "",
+        audio: null,
+        image: null,
+      },
+    ],
+    description: "Description example",
     gives_experience: true,
-    challenge: 0,
+    challenge: 1,
     phonemes: "",
   });
+
+  const oneItem = [
+    "PronunciationRecognitionActivity",
+    "WritingRecognitionActivity",
+  ];
+  const manyItems = ["SentenceMatchingActivity", "ImageMatchingActivity"];
 
   const [submitted, setSubmitted] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
 
-  const handleChange = (e) => {
+  const handleChange = (e, index) => {
     const { name, value, files } = e.target;
-    if (name.startsWith("item.") || name.startsWith("items.")) {
-      const [key, subkey] = name.split(".");
-      // Se maneja si el input es de tipo file
-      const updatedValue = files ? files[0] : value;
-      const updatedItem = { ...formData[key], [subkey]: updatedValue };
-      setFormData({ ...formData, [key]: updatedItem });
-    } else {
-      setFormData({ ...formData, [name]: value });
+    const updatedItems = [...formData.items];
+    const updatedValue = files ? files[0] : value;
+
+    if (name.startsWith("items.")) {
+      const subkey = name.split(".")[1];
+      updatedItems[index][subkey] = updatedValue;
+      setFormData({ ...formData, items: updatedItems });
+      return;
     }
+
+    if (name === "type" && oneItem.includes(value)) {
+      setFormData({
+        ...formData,
+        [name]: value,
+        items: [
+          {
+            text: "",
+            text_translation: "",
+            audio: null,
+            image: null,
+          },
+        ],
+      });
+      return;
+    }
+
+    setFormData({ ...formData, [name]: value });
+  };
+
+  const handleAddItem = () => {
+    const newItem = {
+      text: "",
+      text_translation: "",
+      audio: null,
+      image: null,
+    };
+    setFormData({ ...formData, items: [...formData.items, newItem] });
+  };
+
+  const handleRemoveItem = (index) => {
+    const updatedItems = [...formData.items];
+    updatedItems.splice(index, 1);
+    setFormData({ ...formData, items: updatedItems });
+  };
+
+  const postItem = async (item) => {
+    const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/activity-app/items/`;
+    const data = new FormData();
+    Object.keys(item).forEach((key) => {
+      const value = item[key];
+      if (value) {
+        data.append(key, value);
+      }
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: data,
+    });
+
+    const responseData = await response.json();
+    return responseData; // Asumiendo que la respuesta incluye un 'id'
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/activity-app/activities/`; // Reemplaza con la URL del servidor real
-    const data = new FormData();
-
-    // Llenar FormData con el estado actual del formulario
-    data.append("type", formData.type);
-    data.append("description", formData.description);
-    data.append("gives_experience", formData.gives_experience);
-    data.append("challenge", formData.challenge);
-    data.append("phonemes", formData.phonemes);
-    Object.keys(formData.item).forEach((key) => {
-      data.append(`item.${key}`, formData.item[key]);
-    });
-
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        body: data, // Se envía como FormData
-      });
-      const responseData = await response.json();
-      console.log(responseData); // Manejar la respuesta del servidor
+      const activityUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/activity-app/activities/`;
 
-      if (!response.ok) {
-        throw new Error(responseData.error || "Failed to submit activity.");
+      const activityData = {
+        type: formData.type,
+        description: formData.description,
+        gives_experience: formData.gives_experience,
+        challenge: formData.challenge,
+        phonemes: formData.phonemes,
+      };
+
+      const activityResponse = await fetch(activityUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(activityData),
+      });
+
+      if (!activityResponse.ok) {
+        throw new Error("Failed to submit activity.");
       }
-      setSubmissionResult(responseData);
+      const activityResponseData = await activityResponse.json();
+
+      const items = await Promise.all(
+        formData.items.map((item) =>
+          postItem({ ...item, activity: activityResponseData.id })
+        )
+      );
+
+      setSubmissionResult({ ...activityResponseData, items });
       setSubmitted(true);
     } catch (error) {
       console.error("Error submitting form:", error);
@@ -79,7 +150,9 @@ export default function ActivityForm() {
         ) : (
           <div className="success text-green-500">
             <p>Activity successfully created!</p>
-            <pre>{JSON.stringify(submissionResult, null, 2)}</pre>
+            <pre className="whitespace-break-spaces text-sm">
+              {JSON.stringify(submissionResult, null, 2)}
+            </pre>
           </div>
         )}
         <button
@@ -95,13 +168,21 @@ export default function ActivityForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 bg-gray-50 p-10 shadow-sm"
+      className="flex flex-col gap-4 bg-white p-14 shadow-sm text-sm"
     >
+      <input
+        type="text"
+        name="access_token"
+        value={accessToken}
+        onChange={(e) => setAccessToken(e.target.value)}
+        placeholder="Access Token"
+        className="flex border border-gray-300 rounded p-2"
+      />
       <select
         name="type"
         value={formData.type}
         onChange={handleChange}
-        className="flex  shadow-sm bg-white border-gray-300 rounded-lg p-2 w-full"
+        className="flex border bg-white border-gray-300 rounded p-2 w-full"
       >
         <option value="">Select Activity Type</option>
         <option value="PronunciationRecognitionActivity">
@@ -117,76 +198,96 @@ export default function ActivityForm() {
         value={formData.description}
         onChange={handleChange}
         placeholder="Description"
-        className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
+        className="flex border border-gray-300 rounded p-2"
       />
-      <div className="flex flex-col gap-4 p-8">
-        <input
-          type="text"
-          name="item.text"
-          value={formData.item.text}
-          onChange={handleChange}
-          placeholder="Text"
-          className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
-        />
-        <input
-          type="text"
-          name="item.text_translation"
-          value={formData.item.text_translation}
-          onChange={handleChange}
-          placeholder="Text Translation"
-          className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
-        />
-        <input
-          type="file"
-          name="item.audio"
-          onChange={handleChange}
-          className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
-        />
-        {formData.type === "WritingRecognitionActivity" && (
-          <input
-            type="text"
-            name="phonemes"
-            value={formData.phonemes}
-            onChange={handleChange}
-            placeholder="Phonemes"
-          />
-        )}
-        {formData.type === "ImageMatchingActivity" && (
-          <input
-            type="text"
-            name="item.image"
-            value={formData.item.image}
-            onChange={handleChange}
-            className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
-          />
-        )}
-      </div>
-
-      <div className="flex flex-row gap-4 w-full">
-        Gives Experience
-        <input
-          type="checkbox"
-          name="gives_experience"
-          checked={formData.gives_experience}
-          onChange={(e) =>
-            setFormData({ ...formData, gives_experience: e.target.checked })
-          }
-        />
-      </div>
-
       <div className="flex flex-row gap-4 w-full items-center">
-        <span className="flex whitespace-nowrap">ID Challenge</span>
+        <span className="flex whitespace-nowrap px-4">ID Challenge</span>
         <input
           type="number"
           name="challenge"
           value={formData.challenge}
           onChange={handleChange}
           placeholder="Challenge Level"
-          className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
+          className="flex border border-gray-300 rounded p-2 w-full"
         />
       </div>
+      {formData.type === "WritingRecognitionActivity" && (
+        <input
+          type="text"
+          name="phonemes"
+          value={formData.phonemes}
+          onChange={handleChange}
+          placeholder="Phonemes"
+          className="flex border border-gray-300 rounded p-2"
+        />
+      )}
+      <div className="flex flex-col gap-6 w-full items-center p-4">
+        {formData.items.map((item, index) => (
+          <div key={index} className="item-entry flex flex-col gap-2 p-2">
+            <input
+              type="text"
+              name="items.text"
+              value={item.text}
+              onChange={(e) => handleChange(e, index)}
+              placeholder="Text"
+              className="flex border border-gray-300 rounded p-2 w-full"
+            />
+            <input
+              type="text"
+              name="items.text_translation"
+              value={item.text_translation}
+              onChange={(e) => handleChange(e, index)}
+              placeholder="Text Translation"
+              className="flex border border-gray-300 rounded p-2 w-full"
+            />
+            <input
+              type="file"
+              name="items.audio"
+              onChange={(e) => handleChange(e, index)}
+              placeholder="Auidio"
+              className="flex border border-gray-300 rounded p-2 w-full"
+            />
+            {formData.type === "ImageMatchingActivity" && (
+              <input
+                type="file"
+                name="items.image"
+                onChange={(e) => handleChange(e, index)}
+                placeholder="Image"
+                className="flex border border-gray-300 rounded p-2 w-full"
+              />
+            )}
+            {manyItems.includes(formData.type) ? (
+              <button
+                type="button"
+                onClick={() => handleRemoveItem(index)}
+                className="remove-item-btn border border-red-600 text-red-600 p-2 rounded"
+              >
+                Remove Item
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {manyItems.includes(formData.type) ? (
+        <button
+          type="button"
+          onClick={handleAddItem}
+          className="border border-blue-600 text-blue-600 p-2 rounded"
+        >
+          Add New Item
+        </button>
+      ) : null}
 
-      <button type="submit">Submit Activity</button>
+      <button
+        type="submit"
+        className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded
+        border border-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={
+          !formData.type || !formData.description || !formData.challenge || !accessToken
+        }
+      >
+        Submit Activity
+      </button>
     </form>
   );
 }
