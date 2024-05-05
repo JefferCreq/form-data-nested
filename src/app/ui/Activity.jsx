@@ -17,6 +17,9 @@ export default function ActivityForm() {
     phonemes: "",
   });
 
+  const [submitted, setSubmitted] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
+
   const handleChange = (e) => {
     const { name, value, files } = e.target;
     if (name.startsWith("item.") || name.startsWith("items.")) {
@@ -52,10 +55,42 @@ export default function ActivityForm() {
       });
       const responseData = await response.json();
       console.log(responseData); // Manejar la respuesta del servidor
+
+      if (!response.ok) {
+        throw new Error(responseData.error || "Failed to submit activity.");
+      }
+      setSubmissionResult(responseData);
+      setSubmitted(true);
     } catch (error) {
       console.error("Error submitting form:", error);
+      setSubmissionResult({
+        error: "Failed to submit activity. Please try again.",
+      });
+      setSubmitted(true);
     }
   };
+
+  if (submitted) {
+    return (
+      <div className="result-container p-10">
+        <h3>Submission Result:</h3>
+        {submissionResult.error ? (
+          <div className="error text-red-500">{submissionResult.error}</div>
+        ) : (
+          <div className="success text-green-500">
+            <p>Activity successfully created!</p>
+            <pre>{JSON.stringify(submissionResult, null, 2)}</pre>
+          </div>
+        )}
+        <button
+          onClick={() => setSubmitted(false)}
+          className="mt-4 p-2 bg-blue-500 text-white rounded"
+        >
+          Submit Another Activity
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form
@@ -126,22 +161,31 @@ export default function ActivityForm() {
           />
         )}
       </div>
-      <input
-        type="checkbox"
-        name="gives_experience"
-        checked={formData.gives_experience}
-        onChange={(e) =>
-          setFormData({ ...formData, gives_experience: e.target.checked })
-        }
-      />{" "}
-      Gives Experience
-      <input
-        type="number"
-        name="challenge"
-        value={formData.challenge}
-        onChange={handleChange}
-        placeholder="Challenge Level"
-      />
+
+      <div className="flex flex-row gap-4 w-full">
+        Gives Experience
+        <input
+          type="checkbox"
+          name="gives_experience"
+          checked={formData.gives_experience}
+          onChange={(e) =>
+            setFormData({ ...formData, gives_experience: e.target.checked })
+          }
+        />
+      </div>
+
+      <div className="flex flex-row gap-4 w-full items-center">
+        <span className="flex whitespace-nowrap">ID Challenge</span>
+        <input
+          type="number"
+          name="challenge"
+          value={formData.challenge}
+          onChange={handleChange}
+          placeholder="Challenge Level"
+          className="flex  shadow-sm bg-white border-gray-300 rounded-md p-2 w-full"
+        />
+      </div>
+
       <button type="submit">Submit Activity</button>
     </form>
   );
